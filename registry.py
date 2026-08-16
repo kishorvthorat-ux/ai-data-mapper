@@ -15,9 +15,12 @@ class TransformationRegistry:
         return df[source_col].map(mapping)
 
     @staticmethod
-    def concat(df: pd.DataFrame, source_cols: list, delimiter: str = " ", **kwargs) -> pd.Series:
-        # Convert columns to string, then join
-        return df[source_cols].astype(str).agg(delimiter.join, axis=1)
+    def concat(df: pd.DataFrame, source_cols=None, source_columns=None, columns=None, delimiter: str = " ", **kwargs) -> pd.Series:
+        """Robust concat handling supporting multiple possible AI parameter key names."""
+        cols = source_cols or source_columns or columns or []
+        if not cols:
+            return pd.Series([""] * len(df), index=df.index)
+        return df[list(cols)].astype(str).agg(delimiter.join, axis=1)
         
     @staticmethod
     def static_default(df: pd.DataFrame, value: str, **kwargs) -> pd.Series:
@@ -27,11 +30,9 @@ class TransformationRegistry:
     def calculated(df: pd.DataFrame, expression: str, **kwargs) -> pd.Series:
         """Securely evaluates math and if-else logic using asteval and numpy."""
         aeval = Interpreter()
-        # Inject standard numpy logical functions
         aeval.symtable['where'] = np.where
         aeval.symtable['ifelse'] = np.where
         
-        # Inject Source Columns as Variables
         for col in df.columns:
             aeval.symtable[col] = df[col]
             
@@ -48,7 +49,6 @@ class TransformationRegistry:
         """Secure regex string operations via Pandas built-in string methods."""
         series = df[source_col].astype(str)
         if operation == "extract":
-            # Extracts the first capturing group
             return series.str.extract(pattern, expand=False)
         elif operation == "replace":
             return series.str.replace(pattern, replacement, regex=True)
@@ -58,10 +58,6 @@ class TransformationRegistry:
 
 
 def apply_mappings(df_source: pd.DataFrame, final_mappings: List[Dict]) -> pd.DataFrame:
-    """
-    Executes approved rules. 
-    Any errors occurring during transformation will propagate up to be displayed in the UI.
-    """
     df_target = pd.DataFrame()
     
     for rule in final_mappings:
@@ -74,7 +70,6 @@ def apply_mappings(df_source: pd.DataFrame, final_mappings: List[Dict]) -> pd.Da
             
         if hasattr(TransformationRegistry, func_name):
             func = getattr(TransformationRegistry, func_name)
-            # Exceptions (like syntax errors in calculations) will propagate automatically
             df_target[target] = func(df=df_source, **params)
         else:
             raise ValueError(f"CRITICAL: Transformation '{func_name}' is not registered.")
