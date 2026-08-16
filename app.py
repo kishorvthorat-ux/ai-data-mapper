@@ -9,6 +9,50 @@ from schemas import MappingResult
 from mapper import generate_ai_mappings
 from registry import apply_mappings, TransformationRegistry
 
+# password protection
+import hmac
+import streamlit as st
+
+def check_password():
+    """Returns `True` if the user had the correct password."""
+
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        # Use hmac.compare_digest to prevent timing attacks
+        if hmac.compare_digest(st.session_state["password"], st.secrets["APP_PASSWORD"]):
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # Don't store the password in state
+        else:
+            st.session_state["password_correct"] = False
+
+    # Return True if the password has already been validated in this session
+    if st.session_state.get("password_correct", False):
+        return True
+
+    # Show input for password
+    st.text_input(
+        "Please enter the password to access this app:", 
+        type="password", 
+        on_change=password_entered, 
+        key="password"
+    )
+    
+    if "password_correct" in st.session_state:
+        st.error("😕 Password incorrect. Please try again.")
+        
+    return False
+
+
+# --- GATEKEEPER ---
+if not check_password():
+    st.stop()  # The app completely stops executing here if the password is wrong
+
+# ==========================================
+# ⬇️ THE REST OF YOUR APP GOES DOWN HERE ⬇️
+# ==========================================
+st.title("🔄 AI Data Mapping & Business Review")
+# ... your existing logic, LLM calls, and UI ...
+
 # 1. Page Configuration
 st.set_page_config(
     page_title="AI Data Mapping & HITL Governance",
