@@ -120,7 +120,7 @@ with st.sidebar:
     st.divider()
     st.subheader("🤖 2. Run Automation")
     
-    if st.button("🚀 Run Gemini Auto-Mapping", type="primary", use_container_width=True):
+if st.button("🚀 Run Gemini Auto-Mapping", type="primary", use_container_width=True):
         if not api_key:
             st.error("Please provide a Gemini API key.")
         else:
@@ -131,7 +131,10 @@ with st.sidebar:
                     st.session_state.source_schema, 
                     st.session_state.target_schema
                 )
-                st.session_state.mappings = [m.model_dump() for m in ai_results]
+                
+                # CHANGED LINE HERE: Remove the .model_dump() list comprehension
+                st.session_state.mappings = ai_results 
+                
                 st.success("Mapping suggestions generated!")
                 st.rerun()
 
