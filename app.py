@@ -406,13 +406,87 @@ if st.session_state.mappings:
         else:
             st.info("No target sample uploaded.")
 
-    st.download_button(
-        label="💾 Download Approved Mapping Rules (JSON)",
-        data=json.dumps(st.session_state.mappings, indent=2),
-        file_name="final_mapping_rules.json",
-        mime="application/json",
-        type="primary"
-    )
+st.divider()
+
+    # 9. Live Preview & Export Options
+    st.subheader("👀 Live Execution Preview & Export Options")
+    col_left, col_right = st.columns(2)
+    with col_left:
+        st.markdown("**Transformed Output (Live):**")
+        try:
+            df_preview = apply_mappings(st.session_state.source_data, st.session_state.mappings)
+            st.dataframe(df_preview.head(10), use_container_width=True)
+        except Exception as e:
+            st.error(f"Execution Error: {e}")
+            
+    with col_right:
+        st.markdown("**Target Data Sample (Expected):**")
+        if st.session_state.target_data_sample is not None:
+            st.dataframe(st.session_state.target_data_sample.head(10), use_container_width=True)
+        else:
+            st.info("No target sample uploaded.")
+
+    st.divider()
+    st.markdown("### 💾 Export Mapping Rules & Specifications")
+    st.caption("Download the finalized mapping configuration for pipeline execution or stakeholder sign-off.")
+
+    # Prepare flattened DataFrame including Datatypes and Mandatory flags
+    export_rows = []
+    for mapping in st.session_state.mappings:
+        t_field = mapping["target_field"]
+        meta = target_meta.get(t_field, {})
+        
+        export_rows.append({
+            "Target Field": t_field,
+            "Target Datatype": meta.get("type", "string"),
+            "Mandatory": meta.get("mandatory", False),
+            "Transformation Type": mapping["transformation_type"],
+            "Parameters (JSON/Config)": json.dumps(mapping["parameters"]),
+            "Logic Description": mapping.get("logic_description", ""),
+            "Confidence Score": mapping.get("confidence_score", 1.0)
+        })
+    df_export_spec = pd.DataFrame(export_rows)
+
+    # Render Export Buttons in Columns
+    col_dl_1, col_dl_2, col_dl_3 = st.columns(3)
+
+    with col_dl_1:
+        # JSON Export (For ETL engines)
+        st.download_button(
+            label="💾 Download JSON Contract",
+            data=json.dumps(st.session_state.mappings, indent=2),
+            file_name="final_mapping_rules.json",
+            mime="application/json",
+            use_container_width=True
+        )
+
+    with col_dl_2:
+        # CSV Export (Tabular with Datatypes)
+        csv_data = df_export_spec.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📊 Download CSV Specification",
+            data=csv_data,
+            file_name="data_mapping_specification.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+    with col_dl_3:
+        # Excel Export (Formatted spreadsheet with Datatypes)
+        import io
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df_export_spec.to_excel(writer, index=False, sheet_name='Mapping Specifications')
+        excel_data = excel_buffer.getvalue()
+        
+        st.download_button(
+            label="📈 Download Excel Specification",
+            data=excel_data,
+            file_name="data_mapping_specification.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            type="primary"
+        )
 
 else:
     st.info("👈 Upload your files in the sidebar and click **Run Gemini Auto-Mapping** to begin.")
