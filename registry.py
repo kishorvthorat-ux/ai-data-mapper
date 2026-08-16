@@ -17,7 +17,7 @@ def _find_best_col(df_cols: List[str], target: str) -> str:
         if c.lower() == target_lower:
             return c
             
-    # 2. Specific semantic keyword mapping to prevent ID mix-ups (e.g. mapping fname to first_nm instead of src_cust_id)
+    # 2. Specific semantic keyword mapping to prevent ID mix-ups
     keyword_map = {
         'fname': ['first', 'fname', 'given', 'name'],
         'lname': ['last', 'lname', 'surname', 'family'],
@@ -29,11 +29,10 @@ def _find_best_col(df_cols: List[str], target: str) -> str:
         if key in target_lower:
             for c in df_cols:
                 c_lower = c.lower()
-                # Ensure we don't map a name field to an ID or SKU column
                 if any(syn in c_lower for syn in synonyms) and 'id' not in c_lower and 'sku' not in c_lower:
                     return c
 
-    # 3. Direct substring match (excluding ID/SKU cross-contamination)
+    # 3. Direct substring match
     for c in df_cols:
         c_lower = c.lower()
         if target_lower in c_lower or c_lower in target_lower:
@@ -41,7 +40,7 @@ def _find_best_col(df_cols: List[str], target: str) -> str:
                 continue
             return c
             
-    # 4. Fallback token overlap (ignoring generic prefixes like 'cust')
+    # 4. Fallback token overlap
     target_tokens = set(target_lower.replace('_', ' ').split()) - {'cust', 'client', 'user', 'src', 'target'}
     best_match = None
     max_overlap = 0
@@ -79,7 +78,6 @@ class TransformationRegistry:
         matched_cols = [_find_best_col(df.columns.tolist(), c) for c in cols]
         valid_cols = [c for c in matched_cols if c in df.columns]
         
-        # Auto-heal if empty: grab text columns that are NOT IDs
         if not valid_cols:
             auto_cols = [c for c in df.columns if any(k in c.lower() for k in ['fname', 'lname', 'first', 'last', 'name']) and 'id' not in c.lower()]
             if len(auto_cols) >= 2:
@@ -119,7 +117,10 @@ class TransformationRegistry:
     def regex(df: pd.DataFrame, source_col: str, operation: str = "extract", pattern: str = "", replacement: str = "", **kwargs) -> pd.Series:
         matched_col = _find_best_col(df.columns.tolist(), source_col)
         series = df[matched_col].astype(str)
+        
         if operation == "extract":
+            if pattern and ('(' not in pattern or ')' not in pattern):
+                pattern = f"({pattern})"  # Auto-wrap in capture groups if missing
             return series.str.extract(pattern, expand=False)
         elif operation == "replace":
             return series.str.replace(pattern, replacement, regex=True)
