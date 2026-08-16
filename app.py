@@ -1,6 +1,7 @@
 import os
 import hmac
 import json
+import io
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
@@ -267,31 +268,25 @@ if st.session_state.mappings:
                                 st.rerun()
 
     # -------------------------------------------------------------
-    # TAB 2: ALL ACTIVE MAPPINGS (FULL CRUD: EDIT, UPDATE, DELETE)
+    # TAB 2: ALL ACTIVE MAPPINGS (FULL CRUD)
     # -------------------------------------------------------------
     with tab_all:
         st.subheader("📋 Comprehensive Rules Editor")
         st.markdown("Edit target field names, modify transformation parameters, or delete unwanted mapping rules.")
         
         transform_types = ["direct", "enum_map", "concat", "static_default", "calculated", "regex", "unmapped"]
-
-        # Track indices to safely delete during iteration
         to_delete = []
 
         for idx, mapping in enumerate(list(st.session_state.mappings)):
             target_name = mapping["target_field"]
-            meta = target_meta.get(target_name, {})
-            is_mandatory = meta.get("mandatory", False)
             
             with st.expander(f"Target: **{target_name}** | Type: `{mapping['transformation_type']}`", expanded=False):
-                
-                # Row for Renaming Target Field & Deleting
                 c_name, c_del = st.columns([3, 1])
                 with c_name:
                     new_target_name = st.text_input("Target Field Name", value=target_name, key=f"edit_target_name_{idx}")
                     mapping["target_field"] = new_target_name
                 with c_del:
-                    st.write("") # spacing
+                    st.write("") 
                     if st.button("🗑️ Delete Rule", key=f"del_rule_{idx}", type="secondary"):
                         to_delete.append(idx)
                         
@@ -346,7 +341,6 @@ if st.session_state.mappings:
                     elif selected_type == "unmapped":
                         mapping["parameters"] = {}
 
-        # Process deletions safely outside the loop
         if to_delete:
             for i in sorted(to_delete, reverse=True):
                 st.session_state.mappings.pop(i)
@@ -388,27 +382,7 @@ if st.session_state.mappings:
 
     st.divider()
 
-    # Live Preview & Download
-    st.subheader("👀 Live Execution Preview")
-    col_left, col_right = st.columns(2)
-    with col_left:
-        st.markdown("**Transformed Output (Live):**")
-        try:
-            df_preview = apply_mappings(st.session_state.source_data, st.session_state.mappings)
-            st.dataframe(df_preview.head(10), use_container_width=True)
-        except Exception as e:
-            st.error(f"Execution Error: {e}")
-            
-    with col_right:
-        st.markdown("**Target Data Sample (Expected):**")
-        if st.session_state.target_data_sample is not None:
-            st.dataframe(st.session_state.target_data_sample.head(10), use_container_width=True)
-        else:
-            st.info("No target sample uploaded.")
-
-st.divider()
-
-    # 9. Live Preview & Export Options
+    # 9. Live Execution Preview & Export Options
     st.subheader("👀 Live Execution Preview & Export Options")
     col_left, col_right = st.columns(2)
     with col_left:
@@ -430,7 +404,6 @@ st.divider()
     st.markdown("### 💾 Export Mapping Rules & Specifications")
     st.caption("Download the finalized mapping configuration for pipeline execution or stakeholder sign-off.")
 
-    # Prepare flattened DataFrame including Datatypes and Mandatory flags
     export_rows = []
     for mapping in st.session_state.mappings:
         t_field = mapping["target_field"]
@@ -447,11 +420,9 @@ st.divider()
         })
     df_export_spec = pd.DataFrame(export_rows)
 
-    # Render Export Buttons in Columns
     col_dl_1, col_dl_2, col_dl_3 = st.columns(3)
 
     with col_dl_1:
-        # JSON Export (For ETL engines)
         st.download_button(
             label="💾 Download JSON Contract",
             data=json.dumps(st.session_state.mappings, indent=2),
@@ -461,7 +432,6 @@ st.divider()
         )
 
     with col_dl_2:
-        # CSV Export (Tabular with Datatypes)
         csv_data = df_export_spec.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📊 Download CSV Specification",
@@ -472,8 +442,6 @@ st.divider()
         )
 
     with col_dl_3:
-        # Excel Export (Formatted spreadsheet with Datatypes)
-        import io
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             df_export_spec.to_excel(writer, index=False, sheet_name='Mapping Specifications')
