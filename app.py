@@ -217,15 +217,8 @@ if st.session_state.mappings:
                     elif resolve_mode == "If-Else / Calculated Expression":
                         with c_input:
                             st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
-                            st.markdown(
-                                """
-                                **Calculated / If-Else Syntax Help:**
-                                * **If-Else Condition:** `where(column_name == 'A', 'TrueValue', 'FalseValue')`
-                                * **Math Calculation:** `price * quantity`
-                                * **String Concatenation:** `first_nm + ' ' + last_nm`
-                                """
-                            )
-                            calc_expr = st.text_input("Expression (e.g., where(status_code == '1', 'Active', 'Inactive')):", key=f"q_calc_{idx}")
+                            st.markdown("Use `where(condition, true_val, false_val)` e.g., `where(status_code == '1', 'Active', 'Inactive')`")
+                            calc_expr = st.text_input("Expression:", key=f"q_calc_{idx}")
                         with c_action:
                             st.write("")
                             st.write("")
@@ -238,14 +231,6 @@ if st.session_state.mappings:
                     elif resolve_mode == "Regex Pattern (Extract/Replace)":
                         with c_input:
                             st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
-                            st.markdown(
-                                """
-                                **Regex Help:**
-                                * **extract:** Pulls text matching a regular expression pattern (e.g., `[0-9]+`).
-                                * **replace:** Substitutes pattern matches with a replacement string.
-                                * **match:** Returns True/False if pattern exists.
-                                """
-                            )
                             reg_col = st.selectbox("Source Column:", all_sources, key=f"q_reg_col_{idx}")
                             reg_op = st.selectbox("Operation:", ["extract", "replace", "match"], key=f"q_reg_op_{idx}")
                             reg_pat = st.text_input("Regex Pattern:", key=f"q_reg_pat_{idx}")
@@ -289,11 +274,11 @@ if st.session_state.mappings:
                                 st.rerun()
 
     # -------------------------------------------------------------
-    # TAB 2: ALL ACTIVE MAPPINGS (FULL CRUD)
+    # TAB 2: ALL ACTIVE MAPPINGS (FULL CRUD + APPLY BUTTONS)
     # -------------------------------------------------------------
     with tab_all:
         st.subheader("📋 Comprehensive Rules Editor")
-        st.markdown("Edit target field names, modify transformation parameters, or delete unwanted mapping rules.")
+        st.markdown("Edit target field names, modify parameters, click **Apply Expression Changes** for formulas, or delete rules.")
         
         transform_types = ["direct", "enum_map", "concat", "static_default", "calculated", "regex", "unmapped"]
         to_delete = []
@@ -335,13 +320,12 @@ if st.session_state.mappings:
                         current_expr = current_params.get("expression", "")
                         
                         st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
-                        st.markdown(
-                            """
-                            **Calculated Help:** Use `where(condition, true_val, false_val)` or standard math expressions.
-                            """
-                        )
                         expr_val = st.text_input("Expression", value=str(current_expr), key=f"all_calc_{idx}")
-                        mapping["parameters"] = {"expression": expr_val}
+                        
+                        if st.button("💾 Apply Expression Changes", key=f"apply_calc_{idx}", type="primary"):
+                            mapping["parameters"] = {"expression": expr_val}
+                            st.success("Expression saved!")
+                            st.rerun()
                         
                     elif selected_type == "regex":
                         col_val = mapping["parameters"].get("source_col", all_sources[0] if all_sources else "")
@@ -350,11 +334,6 @@ if st.session_state.mappings:
                         rep_val = mapping["parameters"].get("replacement", "")
                         
                         st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
-                        st.markdown(
-                            """
-                            **Regex Help:** Select operation (`extract`, `replace`, `match`) and provide a valid regular expression pattern.
-                            """
-                        )
                         r_col = st.selectbox("Source Col", all_sources, index=all_sources.index(col_val) if col_val in all_sources else 0, key=f"all_reg_col_{idx}")
                         r_op = st.selectbox("Op", ["extract", "replace", "match"], index=["extract", "replace", "match"].index(op_val) if op_val in ["extract", "replace", "match"] else 0, key=f"all_reg_op_{idx}")
                         r_pat = st.text_input("Pattern", value=pat_val, key=f"all_reg_pat_{idx}")
@@ -374,7 +353,7 @@ if st.session_state.mappings:
                             st.error("Invalid JSON format.")
                             
                     elif selected_type == "concat":
-                        curr_cols = mapping["parameters"].get("source_cols", [])
+                        curr_cols = mapping["parameters"].get("source_cols", mapping["parameters"].get("source_columns", []))
                         st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
                         c_cols = st.multiselect("Source Columns", all_sources, default=[c for c in curr_cols if c in all_sources], key=f"all_concat_{idx}")
                         c_delim = st.text_input("Delimiter", value=mapping["parameters"].get("delimiter", " "), key=f"all_delim_{idx}")
@@ -397,16 +376,11 @@ if st.session_state.mappings:
         with st.form("add_custom_field_form"):
             st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
             custom_name = st.text_input("New Target Column Name:")
-            custom_type = st.selectbox("Transformation Type:", ["static_default", "calculated", "regex", "direct"])
+            custom_type = st.selectbox("Transformation Type:", ["static_default", "calculated", "regex", "direct", "concat"])
             
-            # Show contextual helper hints depending on selected type
-            if custom_type == "calculated":
-                st.markdown("ℹ️ *Example: `where(status_code == '1', 'Active', 'Inactive')`*")
-            elif custom_type == "regex":
-                st.markdown("ℹ️ *Provide pattern to extract or match from selected source column.*")
-
-            c_val = st.text_input("Static Value / Expression / Regex Pattern:")
+            c_val = st.text_input("Static Value / Expression / Regex Pattern / Delimiter:")
             c_src = st.selectbox("Source Column (if applicable):", all_sources)
+            c_multisrc = st.multiselect("Source Columns (if concat):", all_sources)
             
             if st.form_submit_button("Add Field to Pipeline"):
                 params = {}
@@ -418,6 +392,8 @@ if st.session_state.mappings:
                     params = {"source_col": c_src, "operation": "extract", "pattern": c_val}
                 elif custom_type == "direct":
                     params = {"source_col": c_src}
+                elif custom_type == "concat":
+                    params = {"source_cols": c_multisrc, "delimiter": c_val or " "}
                     
                 st.session_state.mappings.append({
                     "target_field": custom_name,
