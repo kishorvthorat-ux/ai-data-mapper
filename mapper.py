@@ -19,7 +19,7 @@ def generate_ai_mappings(client: genai.Client, source_schema: dict, target_schem
     """
 
     response = client.models.generate_content(
-        model='gemini-3.5-flash-lite',
+        model='gemini-3.7-flash',
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -43,9 +43,12 @@ def generate_ai_mappings(client: genai.Client, source_schema: dict, target_schem
             else:
                 params = params_str if isinstance(params_str, dict) else {}
 
+            # Normalize transformation_type to lowercase to prevent UI desyncs
+            t_type = str(m.get("transformation_type", "unmapped")).lower().strip()
+
             parsed_mappings.append({
                 "target_field": m.get("target_field"),
-                "transformation_type": m.get("transformation_type", "unmapped"),
+                "transformation_type": t_type,
                 "parameters": params,
                 "logic_description": m.get("logic_description", ""),
                 "confidence_score": m.get("confidence_score", 1.0)
