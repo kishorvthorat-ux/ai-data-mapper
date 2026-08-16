@@ -1,4 +1,5 @@
 import os
+import hmac
 import json
 import pandas as pd
 import streamlit as st
@@ -8,47 +9,104 @@ from google import genai
 from mapper import generate_ai_mappings
 from registry import apply_mappings
 
-# 1. Page Configuration
+# 1. Page Configuration (Must be the first Streamlit command)
 st.set_page_config(
     page_title="AI Data Mapping & HITL Governance",
-    page_icon="🔄",
+    page_icon="🔒",
     layout="wide"
 )
 
 load_dotenv()
 
-# 2. Mock Default Schemas & Data
+# 2. Password Protection Gate
+def check_password() -> bool:
+    expected_password = st.secrets.get("APP_PASSWORD", os.getenv("APP_PASSWORD", "admin123"))
+
+    def login_form():
+        col1, col2, col3 = st.columns([1, 1.2, 1])
+        with col2:
+            st.markdown("### 🔒 Protected Application")
+            st.info("Please enter the password to access the AI Data Mapping Tool.")
+            
+            with st.form("login_form"):
+                password = st.text_input("Password", type="password")
+                submit = st.form_submit_button("Log In", use_container_width=True)
+                
+                if submit:
+                    if hmac.compare_digest(password, expected_password):
+                        st.session_state["authenticated"] = True
+                        st.rerun()
+                    else:
+                        st.error("❌ Incorrect password. Please try again.")
+
+    if not st.session_state.get("authenticated", False):
+        login_form()
+        return False
+    return True
+
+if not check_password():
+    st.stop()
+
+
+# -------------------------------------------------------------
+# EVERYTHING BELOW ONLY RUNS FOR AUTHENTICATED USERS
+# -------------------------------------------------------------
+
+# 3. Mock Default Schemas & Data (Fallbacks)
 DEFAULT_SOURCE_SCHEMA = {"fields": [{"name": "cust_fname", "type": "string"}, {"name": "cust_lname", "type": "string"}, {"name": "status_code", "type": "string"}]}
 DEFAULT_TARGET_SCHEMA = {"fields": [{"name": "full_name", "type": "string", "mandatory": True}, {"name": "account_status", "type": "string", "mandatory": True}]}
 DEFAULT_SOURCE_DATA = pd.DataFrame({"cust_fname": ["John", "Jane"], "cust_lname": ["Doe", "Smith"], "status_code": ["1", "0"]})
 
-# 3. Initialize Session State
+# 4. Initialize Session State
 if "mappings" not in st.session_state:
     st.session_state.mappings = []
 if "source_data" not in st.session_state:
     st.session_state.source_data = DEFAULT_SOURCE_DATA
+if "target_data_sample" not in st.session_state:
+    st.session_state.target_data_sample = None
 if "source_schema" not in st.session_state:
     st.session_state.source_schema = DEFAULT_SOURCE_SCHEMA
 if "target_schema" not in st.session_state:
     st.session_state.target_schema = DEFAULT_TARGET_SCHEMA
 
-# 4. Sidebar Controls & File Uploaders
+# Helper to load data files (CSV or Excel)
+def load_dataframe(file) -> pd.DataFrame:
+    if file.name.endswith('.csv'):
+        return pd.read_csv(file)
+    elif file.name.endswith(('.xls', '.xlsx')):
+        return pd.read_excel(file)
+    return pd.DataFrame()
+
+# 5. Sidebar Controls, Authentication & Uploaders
 with st.sidebar:
     st.title("⚙️ Configuration")
-    api_key = st.text_input("Gemini API Key", value=os.getenv("GEMINI_API_KEY", ""), type="password")
+    
+    if st.button("🚪 Log Out", use_container_width=True):
+        st.session_state["authenticated"] = False
+        st.rerun()
+
+    st.divider()
+    default_key = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
+    api_key = st.text_input("Gemini API Key", value=default_key, type="password")
     
     st.divider()
     st.subheader("📁 1. Upload Files")
-    st.caption("Upload your custom schemas and data. Leave blank to use mock data.")
+    st.caption("Upload schemas (JSON) and sample data (CSV/Excel).")
     
-    source_data_file = st.file_uploader("Source Data (CSV)", type=["csv"])
+    # Updated to support CSV and Excel
+    source_data_file = st.file_uploader("Source Data (CSV/Excel)", type=["csv", "xlsx", "xls"])
     source_schema_file = st.file_uploader("Source Schema (JSON)", type=["json"])
+    
     target_schema_file = st.file_uploader("Target Schema (JSON)", type=["json"])
+    target_data_file = st.file_uploader("Target Data Sample [Optional] (CSV/Excel)", type=["csv", "xlsx", "xls"], help="Upload a sample of the expected output to compare visually.")
     
     if st.button("Load Uploaded Files", use_container_width=True):
         try:
             if source_data_file:
-                st.session_state.source_data = pd.read_csv(source_data_file)
+                st.session_state.source_data = load_dataframe(source_data_file)
+            if target_data_file:
+                st.session_state.target_data_sample = load_dataframe(target_data_file)
+                
             if source_schema_file:
                 st.session_state.source_schema = json.load(source_schema_file)
             if target_schema_file:
@@ -77,7 +135,7 @@ with st.sidebar:
                 st.success("Mapping suggestions generated!")
                 st.rerun()
 
-# 5. Main Dashboard Header
+# 6. Main Dashboard Header
 st.title("🔄 AI Data Mapping & Business Review")
 
 with st.expander("🔍 View Active Schemas in Memory", expanded=False):
@@ -89,7 +147,7 @@ with st.expander("🔍 View Active Schemas in Memory", expanded=False):
         st.markdown("**Target Schema:**")
         st.json(st.session_state.target_schema)
 
-# 6. Overview Metrics
+# 7. Overview Metrics
 if st.session_state.mappings:
     target_meta = {f["name"]: f for f in st.session_state.target_schema.get("fields", [])}
     total_fields = len(st.session_state.mappings)
@@ -109,7 +167,7 @@ if st.session_state.mappings:
 
     st.divider()
 
-    # 7. Interactive Human-in-the-Loop Mapping Editor
+    # 8. Interactive Human-in-the-Loop Mapping Editor
     st.subheader("🛠️ Target Field Review & Rules Editor")
     
     source_col_options = [f["name"] for f in st.session_state.source_schema.get("fields", [])]
@@ -166,7 +224,7 @@ if st.session_state.mappings:
                     
                 elif selected_type == "enum_map":
                     curr_col = mapping["parameters"].get("source_col", source_col_options[0] if source_col_options else "")
-                    default_idx = source_col_options.index(curr_col) if curr_col in source_col_options else 0
+                    default_idx = source_col_options.index(curr_col) if current_col in source_col_options else 0
                     source_col = st.selectbox("Source Column to Map", options=source_col_options, index=default_idx, key=f"enum_col_{idx}")
                     
                     enum_dict = mapping["parameters"].get("mapping", {})
@@ -184,21 +242,27 @@ if st.session_state.mappings:
 
     st.divider()
 
-    # 8. Live Preview & Download
+    # 9. Live Preview & Download
     st.subheader("👀 Live Execution Preview")
+    
+    st.markdown("**Source Data Preview:**")
+    st.dataframe(st.session_state.source_data.head(10), use_container_width=True)
     
     col_left, col_right = st.columns(2)
     with col_left:
-        st.markdown("**Source Data Preview:**")
-        st.dataframe(st.session_state.source_data.head(10), use_container_width=True)
-        
-    with col_right:
-        st.markdown("**Target Data (Live Transformed):**")
+        st.markdown("**Transformed Output (Live):**")
         try:
             df_preview = apply_mappings(st.session_state.source_data, st.session_state.mappings)
             st.dataframe(df_preview.head(10), use_container_width=True)
         except Exception as e:
             st.error(f"Execution Error: {e}")
+            
+    with col_right:
+        st.markdown("**Target Data Sample (Expected):**")
+        if st.session_state.target_data_sample is not None:
+            st.dataframe(st.session_state.target_data_sample.head(10), use_container_width=True)
+        else:
+            st.info("No target data sample uploaded. Upload in sidebar to compare side-by-side.")
 
     st.download_button(
         label="💾 Download Approved Mapping Rules (JSON)",
