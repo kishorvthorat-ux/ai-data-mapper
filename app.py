@@ -114,19 +114,16 @@ with st.sidebar:
         if not api_key:
             st.error("Please provide a Gemini API key.")
         else:
-            # Check if there are custom columns present
             standard_target_fields = {f["name"] for f in st.session_state.target_schema.get("fields", [])}
             has_custom_cols = any(
                 m["target_field"] not in standard_target_fields 
                 for m in st.session_state.mappings
             )
             
-            # If mappings exist and custom columns are found, prompt the user first
             if st.session_state.mappings and has_custom_cols:
                 st.session_state.confirm_auto_map = True
                 st.rerun()
             else:
-                # First-time run or no custom columns: execute immediately without prompting
                 with st.spinner("Gemini is analyzing semantics..."):
                     client = genai.Client(api_key=api_key)
                     ai_results = generate_ai_mappings(
@@ -138,7 +135,6 @@ with st.sidebar:
                     st.success("Mapping suggestions generated!")
                     st.rerun()
 
-    # Interactive prompt for custom column preservation
     if st.session_state.confirm_auto_map:
         st.warning("⚠️ Custom columns/adjustments detected!")
         preserve_choice = st.radio(
@@ -361,9 +357,14 @@ if st.session_state.mappings:
                     try: current_params = json.loads(current_params)
                     except: current_params = {}
 
+                # Safely normalize transformation type to lowercase matching transform_types list
+                current_type = str(mapping.get("transformation_type", "direct")).lower().strip()
+                if current_type not in transform_types:
+                    current_type = "direct"
+
                 c1, c2 = st.columns([1, 2])
                 with c1:
-                    selected_type = st.selectbox("Transformation Type", transform_types, index=transform_types.index(mapping["transformation_type"]) if mapping["transformation_type"] in transform_types else 0, key=f"all_type_{idx}")
+                    selected_type = st.selectbox("Transformation Type", transform_types, index=transform_types.index(current_type), key=f"all_type_{idx}")
                     mapping["transformation_type"] = selected_type
 
                 with c2:
