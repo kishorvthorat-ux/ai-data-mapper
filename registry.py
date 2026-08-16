@@ -1,4 +1,6 @@
 import pandas as pd
+import numpy as np
+from asteval import Interpreter
 from typing import List, Dict
 
 class TransformationRegistry:
@@ -20,8 +22,39 @@ class TransformationRegistry:
     def static_default(df: pd.DataFrame, value: str, **kwargs) -> pd.Series:
         return pd.Series([value] * len(df), index=df.index)
 
+    @staticmethod
+    def calculated(df: pd.DataFrame, expression: str, **kwargs) -> pd.Series:
+        """Securely evaluates math and if-else logic using asteval and numpy."""
+        aeval = Interpreter()
+        aeval.symtable['where'] = np.where
+        aeval.symtable['ifelse'] = np.where
+        
+        for col in df.columns:
+            aeval.symtable[col] = df[col]
+            
+        try:
+            result = aeval.eval(expression)
+            if len(aeval.error) > 0:
+                raise ValueError(f"Syntax Error: {aeval.error[0].get_error()}")
+            return pd.Series(result, index=df.index)
+        except Exception as e:
+            raise ValueError(f"Failed to evaluate expression '{expression}': {e}")
+
+    @staticmethod
+    def regex(df: pd.DataFrame, source_col: str, operation: str = "extract", pattern: str = "", replacement: str = "", **kwargs) -> pd.Series:
+        """Secure regex string operations via Pandas built-in string methods."""
+        series = df[source_col].astype(str)
+        if operation == "extract":
+            # Extracts the first capturing group or match
+            return series.str.extract(f"({pattern})", expand=False)
+        elif operation == "replace":
+            return series.str.replace(pattern, replacement, regex=True)
+        elif operation == "match":
+            return series.str.contains(pattern, regex=True)
+        return series
+
+
 def apply_mappings(df_source: pd.DataFrame, final_mappings: List[Dict]) -> pd.DataFrame:
-    """Executes the approved mapping rules against a dataframe."""
     df_target = pd.DataFrame()
     
     for rule in final_mappings:
@@ -30,15 +63,14 @@ def apply_mappings(df_source: pd.DataFrame, final_mappings: List[Dict]) -> pd.Da
         params = rule["parameters"]
         
         if func_name == "unmapped":
-            continue # Skip unmapped fields
+            continue
             
-        # Dynamically fetch the function from the registry class
         if hasattr(TransformationRegistry, func_name):
             func = getattr(TransformationRegistry, func_name)
             try:
                 df_target[target] = func(df=df_source, **params)
             except Exception as e:
-                print(f"❌ Execution failed for '{target}' using {func_name}: {e}")
+                print(f"Execution failed for '{target}' using {func_name}: {e}")
         else:
             raise ValueError(f"CRITICAL: Transformation '{func_name}' is not registered.")
             
