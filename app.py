@@ -78,41 +78,70 @@ if "target_schema" not in st.session_state:
     st.session_state.target_schema = DEFAULT_TARGET_SCHEMA
 
 # 4. Sidebar Controls & File Uploaders
+# --- SIDEBAR: OPTIONAL UPLOADS & CONFIG ---
 with st.sidebar:
     st.title("⚙️ Configuration")
-    api_key = st.text_input("OpenAI API Key", value=os.getenv("OPENAI_API_KEY", ""), type="password")
+    api_key = st.text_input(
+        "OpenAI API Key",
+        value=st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", "")),
+        type="password"
+    )
     
     st.divider()
-    st.subheader("📁 1. Upload Files")
-    st.caption("Upload your custom schemas and data. Leave blank to use mock data.")
-    
-    source_data_file = st.file_uploader("Source Data (CSV)", type=["csv"])
-    source_schema_file = st.file_uploader("Source Schema (JSON)", type=["json"])
-    target_schema_file = st.file_uploader("Target Schema (JSON)", type=["json"])
-    
-    if st.button("Load Uploaded Files", use_container_width=True):
+    st.subheader("📁 1. Source Inputs (Optional)")
+    st.caption("Provide either sample data (CSV/Excel) or schema JSON.")
+    src_data_file = st.file_uploader("Source Sample Data", type=["csv", "xlsx", "xls"], key="src_data")
+    src_schema_file = st.file_uploader("Source Schema Definition (JSON)", type=["json"], key="src_schema")
+
+    st.subheader("📁 2. Target Inputs (Optional)")
+    st.caption("Provide either target sample (CSV/Excel) or target schema JSON.")
+    tgt_data_file = st.file_uploader("Target Sample Data", type=["csv", "xlsx", "xls"], key="tgt_data")
+    tgt_schema_file = st.file_uploader("Target Schema Definition (JSON)", type=["json"], key="tgt_schema")
+
+    if st.button("📥 Ingest & Process Inputs", use_container_width=True):
         try:
-            if source_data_file:
-                st.session_state.source_data = pd.read_csv(source_data_file)
-            if source_schema_file:
-                st.session_state.source_schema = json.load(source_schema_file)
-            if target_schema_file:
-                st.session_state.target_schema = json.load(target_schema_file)
+            # 1. Process Source Inputs
+            if src_data_file:
+                # Dynamically choose reader based on file extension
+                if src_data_file.name.endswith('.csv'):
+                    st.session_state.source_data = pd.read_csv(src_data_file)
+                else:
+                    st.session_state.source_data = pd.read_excel(src_data_file)
+                    
+                if not src_schema_file:
+                    st.session_state.source_schema = infer_schema_from_df(st.session_state.source_data, is_target=False)
             
-            # Reset mappings when new files are loaded
-            st.session_state.mappings = [] 
-            st.success("Files successfully loaded into memory!")
+            if src_schema_file:
+                st.session_state.source_schema = json.load(src_schema_file)
+                if not src_data_file and st.session_state.source_data is not None:
+                    cols = [f["name"] for f in st.session_state.source_schema.get("fields", [])]
+                    st.session_state.source_data = pd.DataFrame(columns=cols)
+
+            # 2. Process Target Inputs
+            if tgt_data_file:
+                if tgt_data_file.name.endswith('.csv'):
+                    st.session_state.target_data_sample = pd.read_csv(tgt_data_file)
+                else:
+                    st.session_state.target_data_sample = pd.read_excel(tgt_data_file)
+                    
+                if not tgt_schema_file:
+                    st.session_state.target_schema = infer_schema_from_df(st.session_state.target_data_sample, is_target=True)
+
+            if tgt_schema_file:
+                st.session_state.target_schema = json.load(tgt_schema_file)
+
+            st.session_state.mappings = []  # Reset mappings on new upload
+            st.success("Inputs ingested and schemas prepared successfully!")
         except Exception as e:
-            st.error(f"Error parsing files: {e}")
+            st.error(f"Error processing files: {e}")
 
     st.divider()
-    st.subheader("🤖 2. Run Automation")
-    
+    st.subheader("🤖 3. Run Automation")
     if st.button("🚀 Run AI Auto-Mapping", type="primary", use_container_width=True):
         if not api_key:
             st.error("Please provide an OpenAI API key.")
         else:
-            with st.spinner("AI is analyzing semantics and proposing mappings..."):
+            with st.spinner("AI is analyzing semantics and proposing transformations..."):
                 client = OpenAI(api_key=api_key)
                 ai_results = generate_ai_mappings(
                     client, 
@@ -120,9 +149,8 @@ with st.sidebar:
                     st.session_state.target_schema
                 )
                 st.session_state.mappings = [m.model_dump() for m in ai_results]
-                st.success("Mapping suggestions generated!")
+                st.success("Mapping rules proposed!")
                 st.rerun()
-
 # 5. Main Dashboard Header
 st.title("🔄 AI Data Mapping & Business Review")
 
