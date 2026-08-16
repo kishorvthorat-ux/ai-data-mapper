@@ -1,27 +1,56 @@
 import pandas as pd
 import numpy as np
 from asteval import Interpreter
-from typing import List, Dict, Any
+from typing import List, Dict
 
 def _find_best_col(df_cols: List[str], target: str) -> str:
-    """Intelligently matches a target column name to actual dataframe columns (handles renames/mismatches)."""
+    """Intelligently matches target columns to actual dataframe columns while avoiding ID/Name cross-contamination."""
     if not target:
         return df_cols[0] if df_cols else ""
     if target in df_cols:
         return target
     
-    # 1. Case-insensitive match
+    target_lower = target.lower()
+    
+    # 1. Exact case-insensitive match
     for c in df_cols:
-        if c.lower() == target.lower():
+        if c.lower() == target_lower:
             return c
             
-    # 2. Token overlap match (e.g. 'cust_fname' matches 'first_nm' or 'fname')
-    target_tokens = set(target.lower().replace('_', ' ').split())
+    # 2. Specific semantic keyword mapping to prevent ID mix-ups (e.g. mapping fname to first_nm instead of src_cust_id)
+    keyword_map = {
+        'fname': ['first', 'fname', 'given', 'name'],
+        'lname': ['last', 'lname', 'surname', 'family'],
+        'status': ['status', 'state', 'code'],
+        'sku': ['sku', 'item', 'product', 'code']
+    }
+    
+    for key, synonyms in keyword_map.items():
+        if key in target_lower:
+            for c in df_cols:
+                c_lower = c.lower()
+                # Ensure we don't map a name field to an ID or SKU column
+                if any(syn in c_lower for syn in synonyms) and 'id' not in c_lower and 'sku' not in c_lower:
+                    return c
+
+    # 3. Direct substring match (excluding ID/SKU cross-contamination)
+    for c in df_cols:
+        c_lower = c.lower()
+        if target_lower in c_lower or c_lower in target_lower:
+            if ('id' in c_lower or 'sku' in c_lower) and not ('id' in target_lower or 'sku' in target_lower):
+                continue
+            return c
+            
+    # 4. Fallback token overlap (ignoring generic prefixes like 'cust')
+    target_tokens = set(target_lower.replace('_', ' ').split()) - {'cust', 'client', 'user', 'src', 'target'}
     best_match = None
     max_overlap = 0
     
     for c in df_cols:
-        c_tokens = set(c.lower().replace('_', ' ').split())
+        c_lower = c.lower()
+        if ('id' in c_lower or 'sku' in c_lower) and not any(t in target_lower for t in ['id', 'sku', 'cust']):
+            continue
+        c_tokens = set(c_lower.replace('_', ' ').split())
         overlap = len(target_tokens & c_tokens)
         if overlap > max_overlap:
             max_overlap = overlap
@@ -50,13 +79,13 @@ class TransformationRegistry:
         matched_cols = [_find_best_col(df.columns.tolist(), c) for c in cols]
         valid_cols = [c for c in matched_cols if c in df.columns]
         
-        # Auto-heal if still empty: grab name or text columns
+        # Auto-heal if empty: grab text columns that are NOT IDs
         if not valid_cols:
-            auto_cols = [c for c in df.columns if any(k in c.lower() for k in ['fname', 'lname', 'first', 'last', 'name', 'cust'])]
+            auto_cols = [c for c in df.columns if any(k in c.lower() for k in ['fname', 'lname', 'first', 'last', 'name']) and 'id' not in c.lower()]
             if len(auto_cols) >= 2:
                 valid_cols = auto_cols[:2]
             else:
-                str_cols = df.select_dtypes(include=['object']).columns.tolist()
+                str_cols = [c for c in df.select_dtypes(include=['object']).columns.tolist() if 'id' not in c.lower()]
                 valid_cols = str_cols[:2] if len(str_cols) >= 2 else str_cols
                 
         if not valid_cols:
