@@ -217,7 +217,7 @@ if st.session_state.mappings:
                     elif resolve_mode == "If-Else / Calculated Expression":
                         with c_input:
                             st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
-                            st.markdown("Use `where(condition, true_val, false_val)` e.g., `where(status_code == '1', 'Active', 'Inactive')`")
+                            st.markdown("Use `where(condition, true_val, false_val)` e.g., `where(country_cd == 'USA', 'USD', 'CAD')`")
                             calc_expr = st.text_input("Expression:", key=f"q_calc_{idx}")
                         with c_action:
                             st.write("")
@@ -248,7 +248,7 @@ if st.session_state.mappings:
                         with c_input:
                             st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
                             enum_src = st.selectbox("Source Column:", all_sources, key=f"q_enum_src_{idx}")
-                            enum_json = st.text_area("JSON Map:", value='{"1": "Active"}', key=f"q_enum_json_{idx}", height=60)
+                            enum_json = st.text_area("JSON Map:", value='{"A": "Active", "I": "Inactive"}', key=f"q_enum_json_{idx}", height=60)
                         with c_action:
                             st.write("")
                             st.write("")
@@ -416,7 +416,6 @@ if st.session_state.mappings:
                 if not custom_name.strip():
                     st.error("Please specify a Target Column Name.")
                 else:
-                    # Uniqueness check
                     existing_fields = [m["target_field"] for m in st.session_state.mappings]
                     if custom_name.strip() in existing_fields:
                         st.error(f"Target field '{custom_name.strip()}' already exists! Choose a unique name.")
