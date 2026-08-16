@@ -274,11 +274,11 @@ if st.session_state.mappings:
                                 st.rerun()
 
     # -------------------------------------------------------------
-    # TAB 2: ALL ACTIVE MAPPINGS (FULL CRUD + APPLY BUTTONS)
+    # TAB 2: ALL ACTIVE MAPPINGS (FULL CRUD + EXPLICIT APPLY BUTTONS)
     # -------------------------------------------------------------
     with tab_all:
         st.subheader("📋 Comprehensive Rules Editor")
-        st.markdown("Edit target field names, modify parameters, click **Apply Expression Changes** for formulas, or delete rules.")
+        st.markdown("Edit target field names, modify parameters, click **Apply Changes** for your updates to take effect, or delete rules.")
         
         transform_types = ["direct", "enum_map", "concat", "static_default", "calculated", "regex", "unmapped"]
         to_delete = []
@@ -298,6 +298,11 @@ if st.session_state.mappings:
                         
                 st.divider()
 
+                current_params = mapping.get("parameters", {})
+                if isinstance(current_params, str):
+                    try: current_params = json.loads(current_params)
+                    except: current_params = {}
+
                 c1, c2 = st.columns([1, 2])
                 with c1:
                     selected_type = st.selectbox("Transformation Type", transform_types, index=transform_types.index(mapping["transformation_type"]) if mapping["transformation_type"] in transform_types else 0, key=f"all_type_{idx}")
@@ -305,20 +310,25 @@ if st.session_state.mappings:
 
                 with c2:
                     if selected_type == "direct":
-                        curr_col = mapping["parameters"].get("source_col", all_sources[0] if all_sources else "")
+                        curr_col = current_params.get("source_col", all_sources[0] if all_sources else "")
                         idx_val = all_sources.index(curr_col) if curr_col in all_sources else 0
-                        mapping["parameters"] = {"source_col": st.selectbox("Source Column", all_sources, index=idx_val, key=f"all_dir_{idx}")}
+                        dir_col = st.selectbox("Source Column", all_sources, index=idx_val, key=f"all_dir_{idx}")
+                        
+                        if st.button("💾 Apply Direct Changes", key=f"apply_dir_{idx}", type="primary"):
+                            mapping["parameters"] = {"source_col": dir_col}
+                            st.success("Direct mapping updated!")
+                            st.rerun()
                         
                     elif selected_type == "static_default":
-                        mapping["parameters"] = {"value": st.text_input("Static Default Value", value=str(mapping["parameters"].get("value", "")), key=f"all_stat_{idx}")}
+                        stat_val = st.text_input("Static Default Value", value=str(current_params.get("value", "")), key=f"all_stat_{idx}")
+                        
+                        if st.button("💾 Apply Static Changes", key=f"apply_stat_{idx}", type="primary"):
+                            mapping["parameters"] = {"value": stat_val}
+                            st.success("Static default updated!")
+                            st.rerun()
                         
                     elif selected_type == "calculated":
-                        current_params = mapping.get("parameters", {})
-                        if isinstance(current_params, str):
-                            try: current_params = json.loads(current_params)
-                            except: current_params = {}
                         current_expr = current_params.get("expression", "")
-                        
                         st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
                         expr_val = st.text_input("Expression", value=str(current_expr), key=f"all_calc_{idx}")
                         
@@ -328,39 +338,55 @@ if st.session_state.mappings:
                             st.rerun()
                         
                     elif selected_type == "regex":
-                        col_val = mapping["parameters"].get("source_col", all_sources[0] if all_sources else "")
-                        op_val = mapping["parameters"].get("operation", "extract")
-                        pat_val = mapping["parameters"].get("pattern", "")
-                        rep_val = mapping["parameters"].get("replacement", "")
+                        col_val = current_params.get("source_col", all_sources[0] if all_sources else "")
+                        op_val = current_params.get("operation", "extract")
+                        pat_val = current_params.get("pattern", "")
+                        rep_val = current_params.get("replacement", "")
                         
                         st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
                         r_col = st.selectbox("Source Col", all_sources, index=all_sources.index(col_val) if col_val in all_sources else 0, key=f"all_reg_col_{idx}")
                         r_op = st.selectbox("Op", ["extract", "replace", "match"], index=["extract", "replace", "match"].index(op_val) if op_val in ["extract", "replace", "match"] else 0, key=f"all_reg_op_{idx}")
                         r_pat = st.text_input("Pattern", value=pat_val, key=f"all_reg_pat_{idx}")
                         r_rep = st.text_input("Replacement", value=rep_val, key=f"all_reg_rep_{idx}")
-                        mapping["parameters"] = {"source_col": r_col, "operation": r_op, "pattern": r_pat, "replacement": r_rep}
+                        
+                        if st.button("💾 Apply Regex Changes", key=f"apply_reg_{idx}", type="primary"):
+                            mapping["parameters"] = {"source_col": r_col, "operation": r_op, "pattern": r_pat, "replacement": r_rep}
+                            st.success("Regex mapping updated!")
+                            st.rerun()
                         
                     elif selected_type == "enum_map":
-                        curr_col = mapping["parameters"].get("source_col", all_sources[0] if all_sources else "")
+                        curr_col = current_params.get("source_col", all_sources[0] if all_sources else "")
                         idx_val = all_sources.index(curr_col) if curr_col in all_sources else 0
                         st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
                         e_col = st.selectbox("Source Col", all_sources, index=idx_val, key=f"all_enum_col_{idx}")
-                        e_map = mapping["parameters"].get("mapping", {})
+                        e_map = current_params.get("mapping", {})
                         e_str = st.text_area("JSON Map", value=json.dumps(e_map, indent=2), key=f"all_enum_map_{idx}", height=80)
-                        try:
-                            mapping["parameters"] = {"source_col": e_col, "mapping": json.loads(e_str)}
-                        except json.JSONDecodeError:
-                            st.error("Invalid JSON format.")
+                        
+                        if st.button("💾 Apply Enum Changes", key=f"apply_enum_{idx}", type="primary"):
+                            try:
+                                parsed_json = json.loads(e_str)
+                                mapping["parameters"] = {"source_col": e_col, "mapping": parsed_json}
+                                st.success("Enum mapping updated!")
+                                st.rerun()
+                            except json.JSONDecodeError:
+                                st.error("Invalid JSON format.")
                             
                     elif selected_type == "concat":
-                        curr_cols = mapping["parameters"].get("source_cols", mapping["parameters"].get("source_columns", []))
+                        curr_cols = current_params.get("source_cols", current_params.get("source_columns", []))
                         st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
                         c_cols = st.multiselect("Source Columns", all_sources, default=[c for c in curr_cols if c in all_sources], key=f"all_concat_{idx}")
-                        c_delim = st.text_input("Delimiter", value=mapping["parameters"].get("delimiter", " "), key=f"all_delim_{idx}")
-                        mapping["parameters"] = {"source_cols": c_cols, "delimiter": c_delim}
+                        c_delim = st.text_input("Delimiter", value=current_params.get("delimiter", " "), key=f"all_delim_{idx}")
+                        
+                        if st.button("💾 Apply Concat Changes", key=f"apply_concat_{idx}", type="primary"):
+                            mapping["parameters"] = {"source_cols": c_cols, "delimiter": c_delim}
+                            st.success("Concatenation rule updated!")
+                            st.rerun()
                         
                     elif selected_type == "unmapped":
                         mapping["parameters"] = {}
+                        if st.button("💾 Apply Unmapped", key=f"apply_unmap_{idx}", type="primary"):
+                            st.success("Set to unmapped.")
+                            st.rerun()
 
         if to_delete:
             for i in sorted(to_delete, reverse=True):
@@ -369,41 +395,53 @@ if st.session_state.mappings:
             st.rerun()
 
     # -------------------------------------------------------------
-    # TAB 3: ADD CUSTOM TARGET FIELD
+    # TAB 3: ADD CUSTOM TARGET FIELD (FIXED FOR MULTIPLE ADDS)
     # -------------------------------------------------------------
     with tab_custom:
         st.subheader("➕ Add Custom Target Field")
-        with st.form("add_custom_field_form"):
+        st.markdown("Add brand-new calculated or static target columns to your pipeline. You can add multiple fields consecutively.")
+        
+        with st.form("add_custom_field_form", clear_on_submit=True):
             st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
-            custom_name = st.text_input("New Target Column Name:")
-            custom_type = st.selectbox("Transformation Type:", ["static_default", "calculated", "regex", "direct", "concat"])
+            custom_name = st.text_input("New Target Column Name:", key="custom_field_name_input")
+            custom_type = st.selectbox("Transformation Type:", ["static_default", "calculated", "regex", "direct", "concat"], key="custom_field_type_input")
             
-            c_val = st.text_input("Static Value / Expression / Regex Pattern / Delimiter:")
-            c_src = st.selectbox("Source Column (if applicable):", all_sources)
-            c_multisrc = st.multiselect("Source Columns (if concat):", all_sources)
+            c_val = st.text_input("Static Value / Expression / Regex Pattern / Delimiter:", key="custom_field_val_input")
+            c_src = st.selectbox("Source Column (if applicable):", all_sources, key="custom_field_src_input")
+            c_multisrc = st.multiselect("Source Columns (if concat):", all_sources, key="custom_field_multisrc_input")
             
-            if st.form_submit_button("Add Field to Pipeline"):
-                params = {}
-                if custom_type == "static_default":
-                    params = {"value": c_val}
-                elif custom_type == "calculated":
-                    params = {"expression": c_val}
-                elif custom_type == "regex":
-                    params = {"source_col": c_src, "operation": "extract", "pattern": c_val}
-                elif custom_type == "direct":
-                    params = {"source_col": c_src}
-                elif custom_type == "concat":
-                    params = {"source_cols": c_multisrc, "delimiter": c_val or " "}
-                    
-                st.session_state.mappings.append({
-                    "target_field": custom_name,
-                    "transformation_type": custom_type,
-                    "parameters": params,
-                    "logic_description": "User created custom field",
-                    "confidence_score": 1.0
-                })
-                st.success(f"Added '{custom_name}'!")
-                st.rerun()
+            submitted = st.form_submit_button("Add Field to Pipeline", use_container_width=True)
+            
+            if submitted:
+                if not custom_name.strip():
+                    st.error("Please specify a Target Column Name.")
+                else:
+                    # Uniqueness check
+                    existing_fields = [m["target_field"] for m in st.session_state.mappings]
+                    if custom_name.strip() in existing_fields:
+                        st.error(f"Target field '{custom_name.strip()}' already exists! Choose a unique name.")
+                    else:
+                        params = {}
+                        if custom_type == "static_default":
+                            params = {"value": c_val}
+                        elif custom_type == "calculated":
+                            params = {"expression": c_val}
+                        elif custom_type == "regex":
+                            params = {"source_col": c_src, "operation": "extract", "pattern": c_val}
+                        elif custom_type == "direct":
+                            params = {"source_col": c_src}
+                        elif custom_type == "concat":
+                            params = {"source_cols": c_multisrc, "delimiter": c_val or " "}
+                            
+                        st.session_state.mappings.append({
+                            "target_field": custom_name.strip(),
+                            "transformation_type": custom_type,
+                            "parameters": params,
+                            "logic_description": "User created custom field",
+                            "confidence_score": 1.0
+                        })
+                        st.success(f"Added '{custom_name.strip()}' successfully!")
+                        st.rerun()
 
     st.divider()
 
