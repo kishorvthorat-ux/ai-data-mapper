@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from google import genai
 
 from mapper import generate_ai_mappings
-from registry import apply_mappings
+from registry import apply_mappings, _find_best_col
 
 # 1. Page Configuration
 st.set_page_config(
@@ -311,7 +311,8 @@ if st.session_state.mappings:
                 with c2:
                     if selected_type == "direct":
                         curr_col = current_params.get("source_col", all_sources[0] if all_sources else "")
-                        idx_val = all_sources.index(curr_col) if curr_col in all_sources else 0
+                        matched_curr = _find_best_col(all_sources, curr_col)
+                        idx_val = all_sources.index(matched_curr) if matched_curr in all_sources else 0
                         dir_col = st.selectbox("Source Column", all_sources, index=idx_val, key=f"all_dir_{idx}")
                         
                         if st.button("💾 Apply Direct Changes", key=f"apply_dir_{idx}", type="primary"):
@@ -339,12 +340,13 @@ if st.session_state.mappings:
                         
                     elif selected_type == "regex":
                         col_val = current_params.get("source_col", all_sources[0] if all_sources else "")
+                        matched_curr = _find_best_col(all_sources, col_val)
                         op_val = current_params.get("operation", "extract")
                         pat_val = current_params.get("pattern", "")
                         rep_val = current_params.get("replacement", "")
                         
                         st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
-                        r_col = st.selectbox("Source Col", all_sources, index=all_sources.index(col_val) if col_val in all_sources else 0, key=f"all_reg_col_{idx}")
+                        r_col = st.selectbox("Source Col", all_sources, index=all_sources.index(matched_curr) if matched_curr in all_sources else 0, key=f"all_reg_col_{idx}")
                         r_op = st.selectbox("Op", ["extract", "replace", "match"], index=["extract", "replace", "match"].index(op_val) if op_val in ["extract", "replace", "match"] else 0, key=f"all_reg_op_{idx}")
                         r_pat = st.text_input("Pattern", value=pat_val, key=f"all_reg_pat_{idx}")
                         r_rep = st.text_input("Replacement", value=rep_val, key=f"all_reg_rep_{idx}")
@@ -356,7 +358,8 @@ if st.session_state.mappings:
                         
                     elif selected_type == "enum_map":
                         curr_col = current_params.get("source_col", all_sources[0] if all_sources else "")
-                        idx_val = all_sources.index(curr_col) if curr_col in all_sources else 0
+                        matched_curr = _find_best_col(all_sources, curr_col)
+                        idx_val = all_sources.index(matched_curr) if matched_curr in all_sources else 0
                         st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
                         e_col = st.selectbox("Source Col", all_sources, index=idx_val, key=f"all_enum_col_{idx}")
                         e_map = current_params.get("mapping", {})
@@ -373,8 +376,11 @@ if st.session_state.mappings:
                             
                     elif selected_type == "concat":
                         curr_cols = current_params.get("source_cols", current_params.get("source_columns", []))
+                        matched_defaults = [_find_best_col(all_sources, c) for c in curr_cols]
+                        valid_defaults = [c for c in matched_defaults if c in all_sources]
+                        
                         st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
-                        c_cols = st.multiselect("Source Columns", all_sources, default=[c for c in curr_cols if c in all_sources], key=f"all_concat_{idx}")
+                        c_cols = st.multiselect("Source Columns", all_sources, default=valid_defaults, key=f"all_concat_{idx}")
                         c_delim = st.text_input("Delimiter", value=current_params.get("delimiter", " "), key=f"all_delim_{idx}")
                         
                         if st.button("💾 Apply Concat Changes", key=f"apply_concat_{idx}", type="primary"):
@@ -395,7 +401,7 @@ if st.session_state.mappings:
             st.rerun()
 
     # -------------------------------------------------------------
-    # TAB 3: ADD CUSTOM TARGET FIELD (FIXED FOR MULTIPLE ADDS)
+    # TAB 3: ADD CUSTOM TARGET FIELD
     # -------------------------------------------------------------
     with tab_custom:
         st.subheader("➕ Add Custom Target Field")
