@@ -153,12 +153,12 @@ if st.session_state.mappings:
     # Tabs Layout
     tab_unmatched, tab_all, tab_custom = st.tabs([
         f"⚡ Unmatched Target Resolver ({len(unmatched_target_mappings)})",
-        "📋 All Active Mappings",
+        f"📋 All Active Mappings ({len(st.session_state.mappings)})",
         "➕ Add Custom Target Field"
     ])
 
     # -------------------------------------------------------------
-    # TAB 1: UNMATCHED TARGET RESOLVER (STATIC, CALCULATED, REGEX, ETC.)
+    # TAB 1: UNMATCHED TARGET RESOLVER
     # -------------------------------------------------------------
     with tab_unmatched:
         st.subheader("⚡ Quick Resolution for Unmatched Target Fields")
@@ -215,8 +215,7 @@ if st.session_state.mappings:
 
                     elif resolve_mode == "If-Else / Calculated Expression":
                         with c_input:
-                            st.caption("Use `where(condition, true_val, false_val)` or math like `col1 * col2`")
-                            calc_expr = st.text_input("Expression:", placeholder="where(status_code == '1', 'Active', 'Inactive')", key=f"q_calc_{idx}")
+                            calc_expr = st.text_input("Expression (e.g. where(status == '1', 'A', 'I')):", key=f"q_calc_{idx}")
                         with c_action:
                             st.write("")
                             st.write("")
@@ -229,8 +228,8 @@ if st.session_state.mappings:
                         with c_input:
                             reg_col = st.selectbox("Source Column:", all_sources, key=f"q_reg_col_{idx}")
                             reg_op = st.selectbox("Operation:", ["extract", "replace", "match"], key=f"q_reg_op_{idx}")
-                            reg_pat = st.text_input("Regex Pattern:", placeholder="e.g. [0-9]+", key=f"q_reg_pat_{idx}")
-                            reg_rep = st.text_input("Replacement (if replace):", placeholder="", key=f"q_reg_rep_{idx}")
+                            reg_pat = st.text_input("Regex Pattern:", key=f"q_reg_pat_{idx}")
+                            reg_rep = st.text_input("Replacement (if replace):", key=f"q_reg_rep_{idx}")
                         with c_action:
                             st.write("")
                             st.write("")
@@ -268,43 +267,91 @@ if st.session_state.mappings:
                                 st.rerun()
 
     # -------------------------------------------------------------
-    # TAB 2: ALL ACTIVE MAPPINGS (IN-PLACE EDITOR)
+    # TAB 2: ALL ACTIVE MAPPINGS (FULL CRUD: EDIT, UPDATE, DELETE)
     # -------------------------------------------------------------
     with tab_all:
         st.subheader("📋 Comprehensive Rules Editor")
+        st.markdown("Edit target field names, modify transformation parameters, or delete unwanted mapping rules.")
+        
         transform_types = ["direct", "enum_map", "concat", "static_default", "calculated", "regex", "unmapped"]
 
-        for idx, mapping in enumerate(st.session_state.mappings):
+        # Track indices to safely delete during iteration
+        to_delete = []
+
+        for idx, mapping in enumerate(list(st.session_state.mappings)):
             target_name = mapping["target_field"]
             meta = target_meta.get(target_name, {})
             is_mandatory = meta.get("mandatory", False)
             
             with st.expander(f"Target: **{target_name}** | Type: `{mapping['transformation_type']}`", expanded=False):
+                
+                # Row for Renaming Target Field & Deleting
+                c_name, c_del = st.columns([3, 1])
+                with c_name:
+                    new_target_name = st.text_input("Target Field Name", value=target_name, key=f"edit_target_name_{idx}")
+                    mapping["target_field"] = new_target_name
+                with c_del:
+                    st.write("") # spacing
+                    if st.button("🗑️ Delete Rule", key=f"del_rule_{idx}", type="secondary"):
+                        to_delete.append(idx)
+                        
+                st.divider()
+
                 c1, c2 = st.columns([1, 2])
                 with c1:
-                    selected_type = st.selectbox("Type", transform_types, index=transform_types.index(mapping["transformation_type"]), key=f"all_type_{idx}")
+                    selected_type = st.selectbox("Transformation Type", transform_types, index=transform_types.index(mapping["transformation_type"]) if mapping["transformation_type"] in transform_types else 0, key=f"all_type_{idx}")
                     mapping["transformation_type"] = selected_type
 
                 with c2:
                     if selected_type == "direct":
-                        mapping["parameters"] = {"source_col": st.selectbox("Source Col", all_sources, key=f"all_dir_{idx}")}
+                        curr_col = mapping["parameters"].get("source_col", all_sources[0] if all_sources else "")
+                        idx_val = all_sources.index(curr_col) if curr_col in all_sources else 0
+                        mapping["parameters"] = {"source_col": st.selectbox("Source Column", all_sources, index=idx_val, key=f"all_dir_{idx}")}
+                        
                     elif selected_type == "static_default":
-                        mapping["parameters"] = {"value": st.text_input("Value", value=str(mapping["parameters"].get("value", "")), key=f"all_stat_{idx}")}
+                        mapping["parameters"] = {"value": st.text_input("Static Default Value", value=str(mapping["parameters"].get("value", "")), key=f"all_stat_{idx}")}
+                        
                     elif selected_type == "calculated":
                         mapping["parameters"] = {"expression": st.text_input("Expression", value=str(mapping["parameters"].get("expression", "")), key=f"all_calc_{idx}")}
+                        
                     elif selected_type == "regex":
-                        col_val = mapping["parameters"].get("source_col", all_sources[0])
+                        col_val = mapping["parameters"].get("source_col", all_sources[0] if all_sources else "")
                         op_val = mapping["parameters"].get("operation", "extract")
                         pat_val = mapping["parameters"].get("pattern", "")
                         rep_val = mapping["parameters"].get("replacement", "")
                         
                         r_col = st.selectbox("Source Col", all_sources, index=all_sources.index(col_val) if col_val in all_sources else 0, key=f"all_reg_col_{idx}")
-                        r_op = st.selectbox("Op", ["extract", "replace", "match"], index=["extract", "replace", "match"].index(op_val), key=f"all_reg_op_{idx}")
+                        r_op = st.selectbox("Op", ["extract", "replace", "match"], index=["extract", "replace", "match"].index(op_val) if op_val in ["extract", "replace", "match"] else 0, key=f"all_reg_op_{idx}")
                         r_pat = st.text_input("Pattern", value=pat_val, key=f"all_reg_pat_{idx}")
                         r_rep = st.text_input("Replacement", value=rep_val, key=f"all_reg_rep_{idx}")
                         mapping["parameters"] = {"source_col": r_col, "operation": r_op, "pattern": r_pat, "replacement": r_rep}
+                        
+                    elif selected_type == "enum_map":
+                        curr_col = mapping["parameters"].get("source_col", all_sources[0] if all_sources else "")
+                        idx_val = all_sources.index(curr_col) if curr_col in all_sources else 0
+                        e_col = st.selectbox("Source Col", all_sources, index=idx_val, key=f"all_enum_col_{idx}")
+                        e_map = mapping["parameters"].get("mapping", {})
+                        e_str = st.text_area("JSON Map", value=json.dumps(e_map, indent=2), key=f"all_enum_map_{idx}", height=80)
+                        try:
+                            mapping["parameters"] = {"source_col": e_col, "mapping": json.loads(e_str)}
+                        except json.JSONDecodeError:
+                            st.error("Invalid JSON format.")
+                            
+                    elif selected_type == "concat":
+                        curr_cols = mapping["parameters"].get("source_cols", [])
+                        c_cols = st.multiselect("Source Columns", all_sources, default=[c for c in curr_cols if c in all_sources], key=f"all_concat_{idx}")
+                        c_delim = st.text_input("Delimiter", value=mapping["parameters"].get("delimiter", " "), key=f"all_delim_{idx}")
+                        mapping["parameters"] = {"source_cols": c_cols, "delimiter": c_delim}
+                        
                     elif selected_type == "unmapped":
                         mapping["parameters"] = {}
+
+        # Process deletions safely outside the loop
+        if to_delete:
+            for i in sorted(to_delete, reverse=True):
+                st.session_state.mappings.pop(i)
+            st.success("Mapping rule deleted successfully!")
+            st.rerun()
 
     # -------------------------------------------------------------
     # TAB 3: ADD CUSTOM TARGET FIELD
@@ -318,7 +365,7 @@ if st.session_state.mappings:
             c_val = st.text_input("Static Value / Expression / Regex Pattern:")
             c_src = st.selectbox("Source Column (if applicable):", all_sources)
             
-            if st.form_submit_button("Add Field"):
+            if st.form_submit_button("Add Field to Pipeline"):
                 params = {}
                 if custom_type == "static_default":
                     params = {"value": c_val}
