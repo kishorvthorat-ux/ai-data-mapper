@@ -216,8 +216,10 @@ if st.session_state.mappings:
 
                     elif resolve_mode == "If-Else / Calculated Expression":
                         with c_input:
-                            calc_expr = st.text_input("Expression (e.g. where(status == '1', 'A', 'I')):", key=f"q_calc_{idx}")
+                            st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
+                            calc_expr = st.text_input("Expression (e.g., where(status_code == '1', 'Active', 'Inactive')):", key=f"q_calc_{idx}")
                         with c_action:
+                            st.write("")
                             st.write("")
                             st.write("")
                             if st.button("Apply Calculated", key=f"b_calc_{idx}", type="primary"):
@@ -227,6 +229,7 @@ if st.session_state.mappings:
 
                     elif resolve_mode == "Regex Pattern (Extract/Replace)":
                         with c_input:
+                            st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
                             reg_col = st.selectbox("Source Column:", all_sources, key=f"q_reg_col_{idx}")
                             reg_op = st.selectbox("Operation:", ["extract", "replace", "match"], key=f"q_reg_op_{idx}")
                             reg_pat = st.text_input("Regex Pattern:", key=f"q_reg_pat_{idx}")
@@ -242,6 +245,7 @@ if st.session_state.mappings:
 
                     elif resolve_mode == "Enum Map":
                         with c_input:
+                            st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
                             enum_src = st.selectbox("Source Column:", all_sources, key=f"q_enum_src_{idx}")
                             enum_json = st.text_area("JSON Map:", value='{"1": "Active"}', key=f"q_enum_json_{idx}", height=60)
                         with c_action:
@@ -257,6 +261,7 @@ if st.session_state.mappings:
 
                     elif resolve_mode == "Concat":
                         with c_input:
+                            st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
                             ccols = st.multiselect("Columns:", all_sources, key=f"q_ccols_{idx}")
                             cdelim = st.text_input("Delimiter:", value=" ", key=f"q_cdelim_{idx}")
                         with c_action:
@@ -307,7 +312,16 @@ if st.session_state.mappings:
                         mapping["parameters"] = {"value": st.text_input("Static Default Value", value=str(mapping["parameters"].get("value", "")), key=f"all_stat_{idx}")}
                         
                     elif selected_type == "calculated":
-                        mapping["parameters"] = {"expression": st.text_input("Expression", value=str(mapping["parameters"].get("expression", "")), key=f"all_calc_{idx}")}
+                        # Safely retrieve parameters whether stored as a dict or string
+                        current_params = mapping.get("parameters", {})
+                        if isinstance(current_params, str):
+                            try: current_params = json.loads(current_params)
+                            except: current_params = {}
+                        current_expr = current_params.get("expression", "")
+                        
+                        st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
+                        expr_val = st.text_input("Expression", value=str(current_expr), key=f"all_calc_{idx}")
+                        mapping["parameters"] = {"expression": expr_val}
                         
                     elif selected_type == "regex":
                         col_val = mapping["parameters"].get("source_col", all_sources[0] if all_sources else "")
@@ -315,6 +329,7 @@ if st.session_state.mappings:
                         pat_val = mapping["parameters"].get("pattern", "")
                         rep_val = mapping["parameters"].get("replacement", "")
                         
+                        st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
                         r_col = st.selectbox("Source Col", all_sources, index=all_sources.index(col_val) if col_val in all_sources else 0, key=f"all_reg_col_{idx}")
                         r_op = st.selectbox("Op", ["extract", "replace", "match"], index=["extract", "replace", "match"].index(op_val) if op_val in ["extract", "replace", "match"] else 0, key=f"all_reg_op_{idx}")
                         r_pat = st.text_input("Pattern", value=pat_val, key=f"all_reg_pat_{idx}")
@@ -324,6 +339,7 @@ if st.session_state.mappings:
                     elif selected_type == "enum_map":
                         curr_col = mapping["parameters"].get("source_col", all_sources[0] if all_sources else "")
                         idx_val = all_sources.index(curr_col) if curr_col in all_sources else 0
+                        st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
                         e_col = st.selectbox("Source Col", all_sources, index=idx_val, key=f"all_enum_col_{idx}")
                         e_map = mapping["parameters"].get("mapping", {})
                         e_str = st.text_area("JSON Map", value=json.dumps(e_map, indent=2), key=f"all_enum_map_{idx}", height=80)
@@ -334,6 +350,7 @@ if st.session_state.mappings:
                             
                     elif selected_type == "concat":
                         curr_cols = mapping["parameters"].get("source_cols", [])
+                        st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
                         c_cols = st.multiselect("Source Columns", all_sources, default=[c for c in curr_cols if c in all_sources], key=f"all_concat_{idx}")
                         c_delim = st.text_input("Delimiter", value=mapping["parameters"].get("delimiter", " "), key=f"all_delim_{idx}")
                         mapping["parameters"] = {"source_cols": c_cols, "delimiter": c_delim}
@@ -353,6 +370,7 @@ if st.session_state.mappings:
     with tab_custom:
         st.subheader("➕ Add Custom Target Field")
         with st.form("add_custom_field_form"):
+            st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
             custom_name = st.text_input("New Target Column Name:")
             custom_type = st.selectbox("Transformation Type:", ["static_default", "calculated", "regex", "direct"])
             
