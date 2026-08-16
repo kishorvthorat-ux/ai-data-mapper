@@ -3,55 +3,10 @@ import json
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
-from openai import OpenAI
+from google import genai
 
-from schemas import MappingResult
 from mapper import generate_ai_mappings
-from registry import apply_mappings, TransformationRegistry
-
-# password protection
-import hmac
-import streamlit as st
-
-def check_password():
-    """Returns `True` if the user had the correct password."""
-
-    def password_entered():
-        """Checks whether a password entered by the user is correct."""
-        # Use hmac.compare_digest to prevent timing attacks
-        if hmac.compare_digest(st.session_state["password"], st.secrets["APP_PASSWORD"]):
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]  # Don't store the password in state
-        else:
-            st.session_state["password_correct"] = False
-
-    # Return True if the password has already been validated in this session
-    if st.session_state.get("password_correct", False):
-        return True
-
-    # Show input for password
-    st.text_input(
-        "Please enter the password to access this app:", 
-        type="password", 
-        on_change=password_entered, 
-        key="password"
-    )
-    
-    if "password_correct" in st.session_state:
-        st.error("😕 Password incorrect. Please try again.")
-        
-    return False
-
-
-# --- GATEKEEPER ---
-if not check_password():
-    st.stop()  # The app completely stops executing here if the password is wrong
-
-# ==========================================
-# ⬇️ THE REST OF YOUR APP GOES DOWN HERE ⬇️
-# ==========================================
-st.title("🔄 AI Data Mapping & Business Review")
-# ... your existing logic, LLM calls, and UI ...
+from registry import apply_mappings
 
 # 1. Page Configuration
 st.set_page_config(
@@ -62,7 +17,7 @@ st.set_page_config(
 
 load_dotenv()
 
-# 2. Mock Default Schemas & Data (Used as fallbacks)
+# 2. Mock Default Schemas & Data
 DEFAULT_SOURCE_SCHEMA = {"fields": [{"name": "cust_fname", "type": "string"}, {"name": "cust_lname", "type": "string"}, {"name": "status_code", "type": "string"}]}
 DEFAULT_TARGET_SCHEMA = {"fields": [{"name": "full_name", "type": "string", "mandatory": True}, {"name": "account_status", "type": "string", "mandatory": True}]}
 DEFAULT_SOURCE_DATA = pd.DataFrame({"cust_fname": ["John", "Jane"], "cust_lname": ["Doe", "Smith"], "status_code": ["1", "0"]})
@@ -78,83 +33,53 @@ if "target_schema" not in st.session_state:
     st.session_state.target_schema = DEFAULT_TARGET_SCHEMA
 
 # 4. Sidebar Controls & File Uploaders
-# --- SIDEBAR: OPTIONAL UPLOADS & CONFIG ---
 with st.sidebar:
     st.title("⚙️ Configuration")
-    api_key = st.text_input(
-        "OpenAI API Key",
-        value=st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", "")),
-        type="password"
-    )
+    api_key = st.text_input("Gemini API Key", value=os.getenv("GEMINI_API_KEY", ""), type="password")
     
     st.divider()
-    st.subheader("📁 1. Source Inputs (Optional)")
-    st.caption("Provide either sample data (CSV/Excel) or schema JSON.")
-    src_data_file = st.file_uploader("Source Sample Data", type=["csv", "xlsx", "xls"], key="src_data")
-    src_schema_file = st.file_uploader("Source Schema Definition (JSON)", type=["json"], key="src_schema")
-
-    st.subheader("📁 2. Target Inputs (Optional)")
-    st.caption("Provide either target sample (CSV/Excel) or target schema JSON.")
-    tgt_data_file = st.file_uploader("Target Sample Data", type=["csv", "xlsx", "xls"], key="tgt_data")
-    tgt_schema_file = st.file_uploader("Target Schema Definition (JSON)", type=["json"], key="tgt_schema")
-
-    if st.button("📥 Ingest & Process Inputs", use_container_width=True):
+    st.subheader("📁 1. Upload Files")
+    st.caption("Upload your custom schemas and data. Leave blank to use mock data.")
+    
+    source_data_file = st.file_uploader("Source Data (CSV)", type=["csv"])
+    source_schema_file = st.file_uploader("Source Schema (JSON)", type=["json"])
+    target_schema_file = st.file_uploader("Target Schema (JSON)", type=["json"])
+    
+    if st.button("Load Uploaded Files", use_container_width=True):
         try:
-            # 1. Process Source Inputs
-            if src_data_file:
-                # Dynamically choose reader based on file extension
-                if src_data_file.name.endswith('.csv'):
-                    st.session_state.source_data = pd.read_csv(src_data_file)
-                else:
-                    st.session_state.source_data = pd.read_excel(src_data_file)
-                    
-                if not src_schema_file:
-                    st.session_state.source_schema = infer_schema_from_df(st.session_state.source_data, is_target=False)
+            if source_data_file:
+                st.session_state.source_data = pd.read_csv(source_data_file)
+            if source_schema_file:
+                st.session_state.source_schema = json.load(source_schema_file)
+            if target_schema_file:
+                st.session_state.target_schema = json.load(target_schema_file)
             
-            if src_schema_file:
-                st.session_state.source_schema = json.load(src_schema_file)
-                if not src_data_file and st.session_state.source_data is not None:
-                    cols = [f["name"] for f in st.session_state.source_schema.get("fields", [])]
-                    st.session_state.source_data = pd.DataFrame(columns=cols)
-
-            # 2. Process Target Inputs
-            if tgt_data_file:
-                if tgt_data_file.name.endswith('.csv'):
-                    st.session_state.target_data_sample = pd.read_csv(tgt_data_file)
-                else:
-                    st.session_state.target_data_sample = pd.read_excel(tgt_data_file)
-                    
-                if not tgt_schema_file:
-                    st.session_state.target_schema = infer_schema_from_df(st.session_state.target_data_sample, is_target=True)
-
-            if tgt_schema_file:
-                st.session_state.target_schema = json.load(tgt_schema_file)
-
-            st.session_state.mappings = []  # Reset mappings on new upload
-            st.success("Inputs ingested and schemas prepared successfully!")
+            st.session_state.mappings = [] 
+            st.success("Files successfully loaded into memory!")
         except Exception as e:
-            st.error(f"Error processing files: {e}")
+            st.error(f"Error parsing files: {e}")
 
     st.divider()
-    st.subheader("🤖 3. Run Automation")
-    if st.button("🚀 Run AI Auto-Mapping", type="primary", use_container_width=True):
+    st.subheader("🤖 2. Run Automation")
+    
+    if st.button("🚀 Run Gemini Auto-Mapping", type="primary", use_container_width=True):
         if not api_key:
-            st.error("Please provide an OpenAI API key.")
+            st.error("Please provide a Gemini API key.")
         else:
-            with st.spinner("AI is analyzing semantics and proposing transformations..."):
-                client = OpenAI(api_key=api_key)
+            with st.spinner("Gemini is analyzing semantics and proposing mappings..."):
+                client = genai.Client(api_key=api_key)
                 ai_results = generate_ai_mappings(
                     client, 
                     st.session_state.source_schema, 
                     st.session_state.target_schema
                 )
                 st.session_state.mappings = [m.model_dump() for m in ai_results]
-                st.success("Mapping rules proposed!")
+                st.success("Mapping suggestions generated!")
                 st.rerun()
+
 # 5. Main Dashboard Header
 st.title("🔄 AI Data Mapping & Business Review")
 
-# Display current active schemas for transparency
 with st.expander("🔍 View Active Schemas in Memory", expanded=False):
     c_left, c_right = st.columns(2)
     with c_left:
@@ -169,15 +94,12 @@ if st.session_state.mappings:
     target_meta = {f["name"]: f for f in st.session_state.target_schema.get("fields", [])}
     total_fields = len(st.session_state.mappings)
     
-    unresolved_mandatory = 0
-    low_confidence = 0
-    
-    for m in st.session_state.mappings:
-        is_mand = target_meta.get(m["target_field"], {}).get("mandatory", False)
-        if is_mand and m["transformation_type"] == "unmapped":
-            unresolved_mandatory += 1
-        if m["confidence_score"] < 0.85 and m["transformation_type"] != "unmapped":
-            low_confidence += 1
+    unresolved_mandatory = sum(1 for m in st.session_state.mappings 
+                             if target_meta.get(m["target_field"], {}).get("mandatory", False) 
+                             and m["transformation_type"] == "unmapped")
+    low_confidence = sum(1 for m in st.session_state.mappings 
+                       if m.get("confidence_score", 1.0) < 0.85 
+                       and m["transformation_type"] != "unmapped")
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Target Fields", total_fields)
@@ -190,7 +112,6 @@ if st.session_state.mappings:
     # 7. Interactive Human-in-the-Loop Mapping Editor
     st.subheader("🛠️ Target Field Review & Rules Editor")
     
-    # Extract list of available source columns dynamically from the loaded schema
     source_col_options = [f["name"] for f in st.session_state.source_schema.get("fields", [])]
     transform_types = ["direct", "enum_map", "concat", "static_default", "unmapped"]
 
@@ -234,11 +155,7 @@ if st.session_state.mappings:
                     mapping["parameters"] = {"source_col": source_col}
                     
                 elif selected_type == "static_default":
-                    val = st.text_input(
-                        "Static Default Value", 
-                        value=str(mapping["parameters"].get("value", "")), 
-                        key=f"static_{idx}"
-                    )
+                    val = st.text_input("Static Default Value", value=str(mapping["parameters"].get("value", "")), key=f"static_{idx}")
                     mapping["parameters"] = {"value": val}
                     
                 elif selected_type == "concat":
@@ -292,4 +209,4 @@ if st.session_state.mappings:
     )
 
 else:
-    st.info("👈 Upload your files in the sidebar and click **Run AI Auto-Mapping** to begin.")
+    st.info("👈 Upload your files in the sidebar and click **Run Gemini Auto-Mapping** to begin.")
