@@ -1,10 +1,10 @@
 import json
 from google import genai
 from google.genai import types
-from schemas import MappingResult, FieldMapping
-from typing import List
+from schemas import MappingResult
+from typing import List, Dict
 
-def generate_ai_mappings(client: genai.Client, source_schema: dict, target_schema: dict) -> List[FieldMapping]:
+def generate_ai_mappings(client: genai.Client, source_schema: dict, target_schema: dict) -> List[Dict]:
     """Calls Google Gemini to generate the initial mapping DSL."""
     
     prompt = f"""
@@ -29,5 +29,20 @@ def generate_ai_mappings(client: genai.Client, source_schema: dict, target_schem
         )
     )
     
-    # Gemini parses Pydantic outputs directly into the .parsed property
-    return response.parsed.mappings
+    raw_mappings = response.parsed.mappings
+    final_mappings = []
+    
+    # Safely convert the JSON string back into the dictionary our app expects
+    for mapping in raw_mappings:
+        m_dict = mapping.model_dump()
+        try:
+            m_dict["parameters"] = json.loads(m_dict["parameters_json"])
+        except Exception as e:
+            print(f"Failed to parse params for {m_dict['target_field']}: {e}")
+            m_dict["parameters"] = {}
+            
+        # Clean up the temporary json string field
+        del m_dict["parameters_json"]
+        final_mappings.append(m_dict)
+        
+    return final_mappings
