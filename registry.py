@@ -4,23 +4,39 @@ from asteval import Interpreter
 from typing import List, Dict
 
 class TransformationRegistry:
-    """Hardcoded safe transformations. No eval() used."""
+    """Hardcoded safe transformations with smart fallbacks."""
     
     @staticmethod
     def direct(df: pd.DataFrame, source_col: str, **kwargs) -> pd.Series:
+        if source_col not in df.columns:
+            return pd.Series([""] * len(df), index=df.index)
         return df[source_col]
 
     @staticmethod
     def enum_map(df: pd.DataFrame, source_col: str, mapping: dict, **kwargs) -> pd.Series:
-        return df[source_col].map(mapping)
+        if source_col not in df.columns:
+            return pd.Series([""] * len(df), index=df.index)
+        # Map values, if key doesn't exist keep the original value instead of returning NaN/None
+        mapped = df[source_col].map(mapping)
+        return mapped.fillna(df[source_col])
 
     @staticmethod
     def concat(df: pd.DataFrame, source_cols=None, source_columns=None, columns=None, delimiter: str = " ", **kwargs) -> pd.Series:
-        """Robust concat handling supporting multiple possible AI parameter key names."""
         cols = source_cols or source_columns or columns or []
+        
+        # Smart Auto-Healing: If AI or user left source_cols empty, auto-detect name columns
         if not cols:
+            cols = [c for c in df.columns if any(k in c.lower() for k in ['fname', 'lname', 'first', 'last', 'name'])]
+            if not cols:
+                # Fallback to first two string columns if no name columns found
+                str_cols = df.select_dtypes(include=['object']).columns.tolist()
+                cols = str_cols[:2] if len(str_cols) >= 2 else str_cols
+
+        valid_cols = [c for c in cols if c in df.columns]
+        if not valid_cols:
             return pd.Series([""] * len(df), index=df.index)
-        return df[list(cols)].astype(str).agg(delimiter.join, axis=1)
+            
+        return df[valid_cols].astype(str).agg(delimiter.join, axis=1)
         
     @staticmethod
     def static_default(df: pd.DataFrame, value: str, **kwargs) -> pd.Series:
@@ -28,7 +44,6 @@ class TransformationRegistry:
 
     @staticmethod
     def calculated(df: pd.DataFrame, expression: str, **kwargs) -> pd.Series:
-        """Securely evaluates math and if-else logic using asteval and numpy."""
         aeval = Interpreter()
         aeval.symtable['where'] = np.where
         aeval.symtable['ifelse'] = np.where
@@ -46,7 +61,8 @@ class TransformationRegistry:
 
     @staticmethod
     def regex(df: pd.DataFrame, source_col: str, operation: str = "extract", pattern: str = "", replacement: str = "", **kwargs) -> pd.Series:
-        """Secure regex string operations via Pandas built-in string methods."""
+        if source_col not in df.columns:
+            return pd.Series([""] * len(df), index=df.index)
         series = df[source_col].astype(str)
         if operation == "extract":
             return series.str.extract(pattern, expand=False)
