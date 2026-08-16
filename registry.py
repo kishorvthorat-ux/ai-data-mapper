@@ -16,6 +16,7 @@ class TransformationRegistry:
 
     @staticmethod
     def concat(df: pd.DataFrame, source_cols: list, delimiter: str = " ", **kwargs) -> pd.Series:
+        # Convert columns to string, then join
         return df[source_cols].astype(str).agg(delimiter.join, axis=1)
         
     @staticmethod
@@ -26,9 +27,11 @@ class TransformationRegistry:
     def calculated(df: pd.DataFrame, expression: str, **kwargs) -> pd.Series:
         """Securely evaluates math and if-else logic using asteval and numpy."""
         aeval = Interpreter()
+        # Inject standard numpy logical functions
         aeval.symtable['where'] = np.where
         aeval.symtable['ifelse'] = np.where
         
+        # Inject Source Columns as Variables
         for col in df.columns:
             aeval.symtable[col] = df[col]
             
@@ -45,8 +48,8 @@ class TransformationRegistry:
         """Secure regex string operations via Pandas built-in string methods."""
         series = df[source_col].astype(str)
         if operation == "extract":
-            # Extracts the first capturing group or match
-            return series.str.extract(f"({pattern})", expand=False)
+            # Extracts the first capturing group
+            return series.str.extract(pattern, expand=False)
         elif operation == "replace":
             return series.str.replace(pattern, replacement, regex=True)
         elif operation == "match":
@@ -55,6 +58,10 @@ class TransformationRegistry:
 
 
 def apply_mappings(df_source: pd.DataFrame, final_mappings: List[Dict]) -> pd.DataFrame:
+    """
+    Executes approved rules. 
+    Any errors occurring during transformation will propagate up to be displayed in the UI.
+    """
     df_target = pd.DataFrame()
     
     for rule in final_mappings:
@@ -67,10 +74,8 @@ def apply_mappings(df_source: pd.DataFrame, final_mappings: List[Dict]) -> pd.Da
             
         if hasattr(TransformationRegistry, func_name):
             func = getattr(TransformationRegistry, func_name)
-            try:
-                df_target[target] = func(df=df_source, **params)
-            except Exception as e:
-                print(f"Execution failed for '{target}' using {func_name}: {e}")
+            # Exceptions (like syntax errors in calculations) will propagate automatically
+            df_target[target] = func(df=df_source, **params)
         else:
             raise ValueError(f"CRITICAL: Transformation '{func_name}' is not registered.")
             
