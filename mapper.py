@@ -19,7 +19,7 @@ def generate_ai_mappings(client: genai.Client, source_schema: dict, target_schem
     print("🤖 Gemini AI is analyzing schemas...")
     
 response = client.models.generate_content(
-        model='gemini-2.0-flash', # Try gemini-1.5-flash if 2.0 also throws an error
+        model='gemini-1.5-flash', # Try gemini-1.5-flash if 2.0 also throws an error
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
