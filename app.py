@@ -217,6 +217,14 @@ if st.session_state.mappings:
                     elif resolve_mode == "If-Else / Calculated Expression":
                         with c_input:
                             st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
+                            st.markdown(
+                                """
+                                **Calculated / If-Else Syntax Help:**
+                                * **If-Else Condition:** `where(column_name == 'A', 'TrueValue', 'FalseValue')`
+                                * **Math Calculation:** `price * quantity`
+                                * **String Concatenation:** `first_nm + ' ' + last_nm`
+                                """
+                            )
                             calc_expr = st.text_input("Expression (e.g., where(status_code == '1', 'Active', 'Inactive')):", key=f"q_calc_{idx}")
                         with c_action:
                             st.write("")
@@ -230,6 +238,14 @@ if st.session_state.mappings:
                     elif resolve_mode == "Regex Pattern (Extract/Replace)":
                         with c_input:
                             st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
+                            st.markdown(
+                                """
+                                **Regex Help:**
+                                * **extract:** Pulls text matching a regular expression pattern (e.g., `[0-9]+`).
+                                * **replace:** Substitutes pattern matches with a replacement string.
+                                * **match:** Returns True/False if pattern exists.
+                                """
+                            )
                             reg_col = st.selectbox("Source Column:", all_sources, key=f"q_reg_col_{idx}")
                             reg_op = st.selectbox("Operation:", ["extract", "replace", "match"], key=f"q_reg_op_{idx}")
                             reg_pat = st.text_input("Regex Pattern:", key=f"q_reg_pat_{idx}")
@@ -312,7 +328,6 @@ if st.session_state.mappings:
                         mapping["parameters"] = {"value": st.text_input("Static Default Value", value=str(mapping["parameters"].get("value", "")), key=f"all_stat_{idx}")}
                         
                     elif selected_type == "calculated":
-                        # Safely retrieve parameters whether stored as a dict or string
                         current_params = mapping.get("parameters", {})
                         if isinstance(current_params, str):
                             try: current_params = json.loads(current_params)
@@ -320,6 +335,11 @@ if st.session_state.mappings:
                         current_expr = current_params.get("expression", "")
                         
                         st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
+                        st.markdown(
+                            """
+                            **Calculated Help:** Use `where(condition, true_val, false_val)` or standard math expressions.
+                            """
+                        )
                         expr_val = st.text_input("Expression", value=str(current_expr), key=f"all_calc_{idx}")
                         mapping["parameters"] = {"expression": expr_val}
                         
@@ -330,6 +350,11 @@ if st.session_state.mappings:
                         rep_val = mapping["parameters"].get("replacement", "")
                         
                         st.info(f"💡 **Available Source Fields:** `{', '.join(all_sources)}`")
+                        st.markdown(
+                            """
+                            **Regex Help:** Select operation (`extract`, `replace`, `match`) and provide a valid regular expression pattern.
+                            """
+                        )
                         r_col = st.selectbox("Source Col", all_sources, index=all_sources.index(col_val) if col_val in all_sources else 0, key=f"all_reg_col_{idx}")
                         r_op = st.selectbox("Op", ["extract", "replace", "match"], index=["extract", "replace", "match"].index(op_val) if op_val in ["extract", "replace", "match"] else 0, key=f"all_reg_op_{idx}")
                         r_pat = st.text_input("Pattern", value=pat_val, key=f"all_reg_pat_{idx}")
@@ -374,6 +399,12 @@ if st.session_state.mappings:
             custom_name = st.text_input("New Target Column Name:")
             custom_type = st.selectbox("Transformation Type:", ["static_default", "calculated", "regex", "direct"])
             
+            # Show contextual helper hints depending on selected type
+            if custom_type == "calculated":
+                st.markdown("ℹ️ *Example: `where(status_code == '1', 'Active', 'Inactive')`*")
+            elif custom_type == "regex":
+                st.markdown("ℹ️ *Provide pattern to extract or match from selected source column.*")
+
             c_val = st.text_input("Static Value / Expression / Regex Pattern:")
             c_src = st.selectbox("Source Column (if applicable):", all_sources)
             
