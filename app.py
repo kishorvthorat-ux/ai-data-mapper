@@ -66,6 +66,8 @@ if "source_schema" not in st.session_state:
     st.session_state.source_schema = DEFAULT_SOURCE_SCHEMA
 if "target_schema" not in st.session_state:
     st.session_state.target_schema = DEFAULT_TARGET_SCHEMA
+if "confirm_auto_map" not in st.session_state:
+    st.session_state.confirm_auto_map = False
 
 def load_dataframe(file) -> pd.DataFrame:
     if file.name.endswith('.csv'):
@@ -100,25 +102,81 @@ with st.sidebar:
             if target_schema_file: st.session_state.target_schema = json.load(target_schema_file)
             
             st.session_state.mappings = [] 
+            st.session_state.confirm_auto_map = False
             st.success("Files successfully loaded into memory!")
         except Exception as e:
             st.error(f"Error parsing files: {e}")
 
     st.divider()
     st.subheader("🤖 2. Run Automation")
+    
     if st.button("🚀 Run Gemini Auto-Mapping", type="primary", use_container_width=True):
         if not api_key:
             st.error("Please provide a Gemini API key.")
         else:
-            with st.spinner("Gemini is analyzing semantics..."):
-                client = genai.Client(api_key=api_key)
-                ai_results = generate_ai_mappings(
-                    client, 
-                    st.session_state.source_schema, 
-                    st.session_state.target_schema
-                )
-                st.session_state.mappings = ai_results
-                st.success("Mapping suggestions generated!")
+            # Check if there are custom columns present
+            standard_target_fields = {f["name"] for f in st.session_state.target_schema.get("fields", [])}
+            has_custom_cols = any(
+                m["target_field"] not in standard_target_fields 
+                for m in st.session_state.mappings
+            )
+            
+            # If mappings exist and custom columns are found, prompt the user first
+            if st.session_state.mappings and has_custom_cols:
+                st.session_state.confirm_auto_map = True
+                st.rerun()
+            else:
+                # First-time run or no custom columns: execute immediately without prompting
+                with st.spinner("Gemini is analyzing semantics..."):
+                    client = genai.Client(api_key=api_key)
+                    ai_results = generate_ai_mappings(
+                        client, 
+                        st.session_state.source_schema, 
+                        st.session_state.target_schema
+                    )
+                    st.session_state.mappings = ai_results
+                    st.success("Mapping suggestions generated!")
+                    st.rerun()
+
+    # Interactive prompt for custom column preservation
+    if st.session_state.confirm_auto_map:
+        st.warning("⚠️ Custom columns/adjustments detected!")
+        preserve_choice = st.radio(
+            "Do you want to preserve your custom columns?",
+            ["Preserve custom columns", "Overwrite (Discard custom columns)"],
+            key="preserve_custom_radio"
+        )
+        
+        c_btn1, c_btn2 = st.columns(2)
+        with c_btn1:
+            if st.button("Confirm Run", type="primary", use_container_width=True):
+                with st.spinner("Gemini is analyzing semantics..."):
+                    client = genai.Client(api_key=api_key)
+                    
+                    standard_target_fields = {f["name"] for f in st.session_state.target_schema.get("fields", [])}
+                    custom_mappings_to_preserve = [
+                        m for m in st.session_state.mappings 
+                        if m["target_field"] not in standard_target_fields
+                    ]
+                    
+                    ai_results = generate_ai_mappings(
+                        client, 
+                        st.session_state.source_schema, 
+                        st.session_state.target_schema
+                    )
+                    
+                    if "Preserve" in preserve_choice:
+                        st.session_state.mappings = ai_results + custom_mappings_to_preserve
+                        st.success("Auto-mapping complete & custom columns preserved!")
+                    else:
+                        st.session_state.mappings = ai_results
+                        st.success("Auto-mapping complete & custom columns discarded!")
+                        
+                    st.session_state.confirm_auto_map = False
+                    st.rerun()
+        with c_btn2:
+            if st.button("Cancel", use_container_width=True):
+                st.session_state.confirm_auto_map = False
                 st.rerun()
 
 # Main Dashboard Header
